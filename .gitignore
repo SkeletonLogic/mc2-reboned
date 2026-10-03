@@ -1,0 +1,9 @@
+﻿build/
+build-*/
+*.user
+build-*.log
+tmp/
+
+# PORT: python tooling bytecode
+__pycache__/
+*.pyc

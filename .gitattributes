@@ -1,0 +1,3 @@
+# Store every file byte-for-byte as it is in the working tree: no line-ending
+# conversion, whatever core.autocrlf says on the machine that commits.
+* -text

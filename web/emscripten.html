@@ -1,0 +1,1122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MechCommander 2 — Release 1.0</title>
+  <style>
+    /* Shell layout, owner's request 2026-09-30: the game fills the window; the
+       title, status, buttons and log live in a collapsible right-hand panel styled
+       after MC2's own gunmetal / hazard-stripe / orange UI. */
+    :root {
+      color-scheme: dark;
+      --tab-w: 26px; --panel-w: 372px;
+      --steel-hi: #58616b; --inset: #07090c;
+      --orange: #f39a2b; --orange-dim: #9a6a2c; --amber-glow: rgba(243, 154, 43, .22);
+      --hazard: #d9b21f; --blue: #4a8fd6; --text: #d6dde4; --muted: #8394a5;
+      --display: 'Bahnschrift SemiCondensed', Bahnschrift, 'Arial Narrow', 'Segoe UI', sans-serif;
+      --mono: Consolas, 'Cascadia Mono', monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; overflow: hidden; background: #000; color: var(--text); font-family: var(--display); }
+    button { font: 600 13px/1 var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--orange);
+      padding: 11px 14px; border: 1px solid var(--orange-dim); border-radius: 2px; cursor: pointer;
+      background: linear-gradient(#30363d, #1a1e23); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 -1px 0 #000; }
+    button:hover { border-color: var(--orange); color: #ffc070; background: linear-gradient(#3a4149, #1f242a); }
+    button:focus-visible { outline: 1px solid var(--blue); outline-offset: 2px; }
+
+    /* The game owns everything left of the tab. */
+    #game-shell { position: fixed; top: 0; left: 0; bottom: 0; right: var(--tab-w); background: #000; }
+    #game-shell canvas { display: block; width: 100%; height: 100%; border: 0; background: #000; }
+    #game-shell:fullscreen { right: 0; width: 100vw; height: 100vh; }
+    #game-shell:fullscreen canvas { width: 100vw; height: 100vh; }
+    #exit-fullscreen { display: none; position: fixed; top: 14px; right: 14px; z-index: 1000; margin: 0; width: 42px; height: 42px; padding: 0; border-radius: 50%; background: rgba(8, 13, 18, .82); color: #fff; font: 700 22px/40px system-ui, sans-serif; letter-spacing: 0; }
+    #game-shell:fullscreen #exit-fullscreen { display: block; }
+
+    /* Side panel: a tab that is always visible, and a body that slides over the game. */
+    #side { position: fixed; top: 0; right: 0; bottom: 0; width: calc(var(--tab-w) + var(--panel-w)); z-index: 900;
+      display: flex; transform: translateX(var(--panel-w)); transition: transform .22s ease-out; }
+    #side.open { transform: translateX(0); }
+    #side-tab { flex: 0 0 var(--tab-w); height: 100%; padding: 0; border: 0; border-left: 1px solid #000; border-radius: 0;
+      display: flex; flex-direction: column; align-items: center; gap: 10px; letter-spacing: .2em;
+      background: linear-gradient(90deg, #202529, #363d44 45%, #22272c); box-shadow: inset 1px 0 0 rgba(255,255,255,.07); }
+    #side-tab:hover { background: linear-gradient(90deg, #262c31, #414951 45%, #283036); }
+    #side-tab .stripes { width: 100%; height: 64px; flex: none; background: repeating-linear-gradient(-45deg, var(--hazard) 0 7px, #111 7px 14px); border-bottom: 1px solid #000; }
+    #side-tab .label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 12px; color: var(--orange); margin-top: 34px; }
+    /* Open/close dial, owner's request 2026-09-30: a blue LED triangle on a small
+       gunmetal knob at the top of the line LED. It spins to point right when the
+       panel opens and swivels back to point left when it closes. */
+    #side-tab .knob { position: absolute; top: 70px; left: 50%; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%;
+      /* Owner's ruling 2026-09-30: the whole dial is a lit blue LED with the arrow
+         embossed on it. The lens and its lighting stay still; only the arrow turns,
+         and the emboss shading sits on a non-turning layer so the light always
+         comes from the top left. */
+      background: radial-gradient(circle at 38% 32%, #b9dcff 0, #7fb6ee 22%, var(--blue) 55%, #2c5f99 88%, #1c3f68 100%);
+      box-shadow: 0 0 0 1px #0b1118, 0 0 0 2px #3a424a, 0 0 9px 1px rgba(74,143,214,.75), inset 0 -2px 3px rgba(10,30,60,.45); }
+    #side-tab .knob .emb { position: absolute; inset: 0;
+      filter: drop-shadow(-.7px -.7px 0 rgba(235,247,255,.95)) drop-shadow(1px 1px 0 rgba(8,26,56,.9)) drop-shadow(0 0 1.5px rgba(8,26,56,.35)); }
+    #side-tab .knob .tri { position: absolute; top: 5px; left: 5px; width: 0; height: 0; transform-origin: 5px 5px;
+      border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 9px solid #4d92da;
+      transition: transform .6s cubic-bezier(.34, 1.45, .6, 1); }
+    #side.open #side-tab .knob .tri { transform: rotate(180deg); }
+    #side-tab:hover .knob { box-shadow: 0 0 0 1px #0b1118, 0 0 0 2px #4a535c, 0 0 12px 2px rgba(74,143,214,.9), inset 0 -2px 3px rgba(10,30,60,.45); }
+    #side-tab .pip { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 6px var(--blue); margin-top: auto; margin-bottom: 14px; }
+    #side-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 14px 14px 12px;
+      background:
+        radial-gradient(circle at 9px 9px, #7b848d 0 2px, transparent 2.5px),
+        radial-gradient(circle at calc(100% - 9px) 9px, #7b848d 0 2px, transparent 2.5px),
+        linear-gradient(#343a41, #22272d 30%, #1a1e23);
+      border-left: 1px solid #000; box-shadow: inset 1px 0 0 var(--steel-hi), -8px 0 24px rgba(0,0,0,.55); }
+    .brand { padding: 8px 12px 10px; background: var(--inset); border: 1px solid #000; box-shadow: 0 0 0 1px var(--steel-hi); }
+    .brand h1 { margin: 0; font: 700 25px/1 var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--orange);
+      text-shadow: 0 1px 0 #000, 0 0 12px rgba(243,154,43,.25); }
+    .brand h1 span { color: var(--blue); }
+    .brand .sub { margin-top: 5px; font-size: 11px; letter-spacing: .28em; text-transform: uppercase; color: var(--muted); }
+    .hazard { height: 9px; flex: none; background: repeating-linear-gradient(-45deg, var(--hazard) 0 8px, #111 8px 16px); border: 1px solid #000; }
+    .panel { background: var(--inset); border: 1px solid #000; box-shadow: 0 0 0 1px #3d444c; }
+    .panel h2 { margin: 0; padding: 6px 10px; font: 600 11px/1 var(--display); letter-spacing: .24em; text-transform: uppercase;
+      color: var(--muted); background: linear-gradient(#262b31, #1a1e23); border-bottom: 1px solid #000; }
+    #status { padding: 9px 10px 10px; font: 12px/1.45 var(--mono); color: #86c1ea; min-height: 3.2em; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    /* GAME FILES: set apart only by a slow amber breath and a corner notch. */
+    #data-button { position: relative; border-color: #b07a32; animation: breathe 5s ease-in-out infinite; }
+    #data-button::after { content: ""; position: absolute; top: 3px; right: 3px; width: 0; height: 0;
+      border-top: 6px solid var(--orange); border-left: 6px solid transparent; opacity: .8; }
+    @keyframes breathe { 0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 -1px 0 #000; }
+      50% { box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 12px var(--amber-glow), 0 0 7px rgba(243,154,43,.16); } }
+    .logwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    #log { flex: 1; min-height: 0; margin: 0; padding: 9px 10px; overflow: auto; font: 10.5px/1.4 var(--mono); color: #9fb0bf;
+      white-space: pre-wrap; word-break: break-word; background: transparent; }
+    .foot { font-size: 10px; letter-spacing: .2em; text-transform: uppercase; color: #5d6873; text-align: right; }
+
+    /* Start card: loading progress, and the one click browsers require before sound. */
+    #boot-card { position: absolute; inset: 0; z-index: 800; display: grid; place-items: center;
+      background: radial-gradient(ellipse at center, rgba(20,26,32,.55), rgba(0,0,0,.9)); }
+    #boot-card[hidden] { display: none; }
+    #boot-card .frame { width: min(420px, 86vw); padding: 16px; text-align: center;
+      background: linear-gradient(#343a41, #1c2126); border: 1px solid #000; box-shadow: 0 0 0 1px var(--steel-hi), 0 18px 40px rgba(0,0,0,.6); }
+    #boot-card .title { margin: 14px 0 6px; font: 700 26px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--orange); }
+    #boot-status { min-height: 2.8em; margin: 8px 0 14px; font: 12px/1.4 var(--mono); color: #86c1ea; }
+    .boot-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .boot-actions button { font-size: 15px; padding: 14px; }
+    .boot-actions button[disabled] { opacity: .55; cursor: default; }
+    .btn-red { color: #ff6b57; border-color: #a8392c; background: linear-gradient(#3b2b2a, #1f1615); }
+    .btn-red:hover { color: #ff9585; border-color: #ff6b57; background: linear-gradient(#4a3230, #261a19); }
+    .btn-blue { color: #86c1ff; border-color: #3a6fa8; background: linear-gradient(#27323f, #151c24); }
+    .btn-blue:hover { color: #b5d9ff; border-color: #6aaaf0; background: linear-gradient(#2f3c4b, #19212a); }
+    /* Signpost, owner's request 2026-09-30: a long line LED down the tab's left
+       edge. It starts unlit; on the signpost a bright spark climbs from the bottom,
+       filling the line with light behind it, while a shimmer sweeps up the bar in
+       step. The line then stays softly lit until the panel is opened. */
+    #side-tab { position: relative; overflow: hidden; }
+    .ledline { position: absolute; left: 3px; top: 98px; bottom: 28px; width: 3px; border-radius: 2px;
+      background: #0a1520; box-shadow: inset 0 0 0 1px #000, 0 0 0 1px rgba(0,0,0,.4); pointer-events: none; }
+    .ledline .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; border-radius: 2px; opacity: 0;
+      background: linear-gradient(to top, #2a67a8, #5aa2ec); box-shadow: 0 0 6px 1px rgba(74,143,214,.75); }
+    .ledline .spark { position: absolute; left: 50%; bottom: 0; width: 9px; height: 18px; margin-left: -4.5px; border-radius: 50%; opacity: 0;
+      background: radial-gradient(closest-side, #ffffff, #cfe6ff 40%, rgba(90,162,236,.55) 70%, rgba(74,143,214,0)); }
+    .ledline.run .fill { animation: ledFill 2.8s cubic-bezier(.4,.1,.3,1) forwards; }
+    .ledline.run .spark { animation: ledSpark 2.8s cubic-bezier(.4,.1,.3,1) forwards; }
+    @keyframes ledFill { 0% { height: 0; opacity: .95; } 100% { height: 100%; opacity: .95; } }
+    @keyframes ledSpark { 0% { bottom: -4px; opacity: 0; } 6% { opacity: 1; } 90% { opacity: 1; }
+      100% { bottom: calc(100% - 14px); opacity: 0; } }
+    /* After the climb (or once loading completes) the line stays on: solid, calm. */
+    /* Calm state matches the tab's blue LED dot exactly. */
+    .ledline.lit .fill { height: 100%; opacity: 1; background: var(--blue); box-shadow: 0 0 6px var(--blue); transition: opacity 1.4s ease-out; }
+    /* While the game is loading the line is a second loading bar: it fills to
+       --p with the spark riding its head. */
+    .ledline.loading .fill { height: var(--p, 0%); opacity: .9; transition: height .35s ease-out; }
+    .ledline.loading .spark { bottom: calc(var(--p, 0%) - 9px); opacity: .9; transition: bottom .35s ease-out; }
+    #side-tab .shimmer { position: absolute; left: 0; right: 0; bottom: -140px; height: 140px; pointer-events: none; opacity: 0;
+      background: linear-gradient(to top, rgba(120,180,255,0), rgba(140,195,255,.18) 50%, rgba(120,180,255,0)); }
+    #side-tab.shimmering .shimmer { animation: tabShimmer 2.8s cubic-bezier(.4,.1,.3,1) forwards; }
+    @keyframes tabShimmer { 0% { transform: translateY(0); opacity: 0; } 8% { opacity: 1; } 88% { opacity: 1; }
+      100% { transform: translateY(calc(-100vh - 140px)); opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .ledline.run .fill { animation: none; height: 100%; opacity: .7; } .ledline.run .spark, #side-tab.shimmering .shimmer { animation: none; } }
+    .brand h1 .emblem, #boot-card .title .emblem { height: .95em; width: auto; vertical-align: -.1em; margin: 0 .12em;
+      image-rendering: auto; filter: drop-shadow(0 1px 0 #000); }
+    /* Loading bar and the LAUNCH "ready" flash. */
+    .boot-bar { height: 10px; margin: 0 0 14px; background: var(--inset); border: 1px solid #000; box-shadow: 0 0 0 1px #3d444c; overflow: hidden; }
+    #boot-fill { height: 100%; width: 0; transition: width .35s ease-out;
+      background: repeating-linear-gradient(-45deg, rgba(255,255,255,.10) 0 6px, rgba(255,255,255,0) 6px 12px), linear-gradient(#f7b04a, #c8741c);
+      box-shadow: 0 0 8px rgba(243,154,43,.45); }
+    #boot-card.ready #boot-fill { background: repeating-linear-gradient(-45deg, rgba(255,255,255,.10) 0 6px, rgba(255,255,255,0) 6px 12px), linear-gradient(#ffc466, #e08a24); }
+    #boot-card.ready #boot-start:not([disabled]) { animation: launchReady 3.3s ease-in-out 1 forwards; }
+    @keyframes launchReady {
+      0%, 22%, 44% { box-shadow: inset 0 1px 0 rgba(255,255,255,.08); color: #ff6b57; border-color: #a8392c; }
+      11%, 33%, 55% { box-shadow: inset 0 0 14px rgba(255,90,70,.45), 0 0 14px rgba(255,90,70,.55); color: #ffd1c8; border-color: #ff8a78; }
+      100% { box-shadow: inset 0 0 8px rgba(255,90,70,.22), 0 0 7px rgba(255,90,70,.3); color: #ff8f7e; border-color: #e0584a; }
+    }
+
+    #fault-banner { display: none; position: fixed; left: 0; right: 0; top: 0; z-index: 2000;
+      padding: 10px 16px; background: #7a1d1d; color: #ffe9e9; border-bottom: 1px solid #c94b4b;
+      font: 12px/1.5 var(--mono); white-space: pre-wrap; max-height: 40vh; overflow: auto; }
+    #fault-banner b { color: #fff; }
+    #data-panel { border: 1px solid #000; border-radius: 2px; background: #1a1e23; color: var(--text); padding: 0; max-width: 720px;
+      box-shadow: 0 0 0 1px var(--steel-hi), 0 20px 50px rgba(0,0,0,.7); }
+    #data-panel::backdrop { background: rgba(3, 6, 9, .72); }
+    #data-panel h2 { margin: 0; padding: 14px 18px; border-bottom: 1px solid #000; color: var(--orange); font: 700 18px/1 var(--display); letter-spacing: .08em; text-transform: uppercase;
+      background: linear-gradient(#343a41, #22272d); }
+    #data-panel .body { padding: 14px 18px; font: 12px/1.6 var(--mono); }
+    #data-panel .pack { border: 1px solid #000; box-shadow: 0 0 0 1px #3d444c; background: var(--inset); padding: 10px 12px; margin-bottom: 10px; }
+    #data-panel .pack h3 { margin: 0 0 4px; font-size: 13px; color: #86c1ea; }
+    #data-panel .pack .meta { color: var(--muted); }
+    #data-panel .pack .actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+    #data-panel .pack .actions a { padding: 9px 14px; border: 1px solid var(--orange-dim); border-radius: 2px; background: linear-gradient(#30363d, #1a1e23);
+      color: var(--orange); font: 600 12px/1 var(--display); letter-spacing: .12em; text-transform: uppercase; text-decoration: none; }
+    #data-panel .note { color: var(--muted); margin-top: 4px; }
+    #data-panel footer { padding: 12px 18px; border-top: 1px solid #000; display: flex; justify-content: flex-end; }
+    @media (prefers-reduced-motion: reduce) { #side, #side-tab .knob .tri { transition: none; } #data-button { animation: none; box-shadow: inset 0 0 8px var(--amber-glow); } }
+    @media (max-width: 520px) { :root { --panel-w: calc(100vw - var(--tab-w)); } }
+  </style>
+</head>
+<body>
+  <div id="fault-banner"></div>
+  <dialog id="data-panel">
+    <h2>Download local</h2>
+    <div class="body" id="data-body"></div>
+    <footer><button id="data-close" type="button">Close</button></footer>
+  </dialog>
+  <main id="game-shell"><canvas id="canvas" width="1280" height="720" tabindex="0" aria-label="MechCommander 2 game canvas"></canvas><button id="exit-fullscreen" type="button" aria-label="Exit fullscreen" title="Exit fullscreen">×</button>
+    <div id="boot-card">
+      <div class="frame">
+        <div class="hazard"></div>
+        <div class="title">Mech<img class="emblem" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFcAAABgCAYAAABot+55AAAFGUlEQVR42u1cMW7jMBDcFfKGvMC4Ip1bA0FU55rAb3BtII2BuHKlIk0Orv2FGFe5lnGA23Q54OIX+BO8IkdB0kmUSC3JpcIFAthOYlPj0XC5nCXCZwiIQRkIAHAln03mGevRnvdrCGGs5XFi6XUxmWewW85YDjpN0+JxnufsxrfYniSwBaZXZSqf92uxgE+An9+uvQ94Nb1Unm82m+Ixh/G1jbMJXLaRpmmFrdyAbWItAEBSF+Lzfg2L7an123DNhjqwnEIFbOMLdf31wZKmL5YTW2X8+fWzFdgm5lYYzEUOODK3RIA2graCW8yAruVhNb1AnuchyYE62VWEc3lYTS8FsByloEtnezPX9QQ3JmD7gMtGf0MDti+43vSXc92A9A9d6O/h8UZLElylbCas1V2hWV0er6YXOAxYajb9nmKMpsCaLH+91x9Un1kHXj43HecQYLU0F2plNY4a3AaiyTiHAmsKLtbrlqEALH80a7NoOpYEBsyYVOylzG/7jKePbi+2J3dpRVsGQbVE5bTcHSoHZPVcim/YxnvB8K0a9M3csW5uIsSIESNGjBgxYsSIEaM1WRYjT9aFV3B9uQaplpldwLq+PlkxLGoLPtyNC8jgvF8LmwC7dm6W6iN45csy5KDQXrkjbV+bNLOc9xso13O9mO+e365ht5zJW9aaLn68PjkjTcniipViuY+dBQmwLdZ+vD459TTUJ+mk/EKapmPwJhR3wfF4hO8/fnvzjSW2tm4MQRGUk5iH3Wml+dmpPMgvcTLPqNIlp30dXTvEic2NR+i5d7Zbzkgnt7u7OyfZQZeNNPHtbKSexHbLGRyPRxYrzaRPP5VtuyhBaiY4Oh4TF74EQ0OH0F3iypzWxUTWh3wJB+NzGYxvtw/ak5sEFhG1XTVUOa2R48YWwCqHjYk81HXWBsDUznIrvrCuC9e4rSueYdmo4rB+Mdy2b2v1pgKxJA9CBey324fifSTANgpFVm37lBNcX1+YafZQZ68PYHXAJZMHnQtVMLtgbdP/1OXBVwdmopsoD5UHXatoA3tbgeXSxWPqz3We/zblvl21gzb22uqUJLftD5EE3Vu0xF6YzDOjW5yADAiOdl8FAGg7wXVboaChS1xHDpqW2Nx7IrwV13V1tg5m37EOlYOh4HLckGwMAu1FH+BqsZdzwzS1HFAxtxfAPpehpcwB0zTFjjkBn9+u4bxfI4WXInF54gd31spJ08ciwoi93HYzDo832Pb6ZJ6Jf6xlA27wW/OHxxu8f3knBRbAwrlii+2psoLiek6NTTmwobmse4JVrKWWA1sTGtZLfpvNJhj2cgdX2WrKRY/lpGaTtbbADUIebANrk7n/yQPX1CxIWeBYZ4DqdrxV1toGFzkA3PQ5LoB1wdxWebAJsMmRK8G3KnWlZKb1V9Xub/1aXbHW5aENQlVv1QQJ+tRwG94LXQLr8ljt1mZCFYCmiw+qOyAUcKGp86WLmZQlStes9XGWi6gz0qEDHMee51ayhxCK58EtIlwZS6h2cUMCF121BVBtNIbGXPwKBx4jh05H6s1LDqz1qrm2LpoLsL7BHb08JAzGQNY1xIm1XMAFiq4h32kXZ3Cp0zOM4BLpLzc54AiukTxwlAOu4CKM6FBhdszVyR64ygFncHvJA2c54A4uwgjOGGfLXJU8cJcDCOgYKzGZZyLPc3H/8i7yPBeTeSYoT3P6isztw8rIWqLDgeqshVjPted7wFgVs0OCIEjxF/pDe3q0qcN+AAAAAElFTkSuQmCC" alt="">Commander 2</div>
+        <div id="boot-status">Preparing persistent game data…</div>
+        <div class="boot-bar"><div id="boot-fill"></div></div>
+        <div class="boot-actions"><button id="boot-start" class="btn-red" type="button">Launch</button><button id="boot-fullscreen" class="btn-blue" type="button">Fullscreen</button></div>
+      </div>
+    </div>
+  </main>
+  </div>
+  <aside id="side" aria-label="Game panel">
+    <button id="side-tab" type="button" aria-expanded="false" aria-controls="side-body" title="Show panel">
+      <span class="shimmer"></span><span class="ledline" id="led-line"><span class="fill"></span><span class="spark"></span></span><span class="stripes"></span><span class="knob"><span class="emb"><span class="tri"></span></span></span><span class="label">MechCommander 2</span><span class="pip"></span>
+    </button>
+    <div id="side-body">
+      <div class="brand"><h1>Mech<img class="emblem" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFcAAABgCAYAAABot+55AAAFGUlEQVR42u1cMW7jMBDcFfKGvMC4Ip1bA0FU55rAb3BtII2BuHKlIk0Orv2FGFe5lnGA23Q54OIX+BO8IkdB0kmUSC3JpcIFAthOYlPj0XC5nCXCZwiIQRkIAHAln03mGevRnvdrCGGs5XFi6XUxmWewW85YDjpN0+JxnufsxrfYniSwBaZXZSqf92uxgE+An9+uvQ94Nb1Unm82m+Ixh/G1jbMJXLaRpmmFrdyAbWItAEBSF+Lzfg2L7an123DNhjqwnEIFbOMLdf31wZKmL5YTW2X8+fWzFdgm5lYYzEUOODK3RIA2graCW8yAruVhNb1AnuchyYE62VWEc3lYTS8FsByloEtnezPX9QQ3JmD7gMtGf0MDti+43vSXc92A9A9d6O/h8UZLElylbCas1V2hWV0er6YXOAxYajb9nmKMpsCaLH+91x9Un1kHXj43HecQYLU0F2plNY4a3AaiyTiHAmsKLtbrlqEALH80a7NoOpYEBsyYVOylzG/7jKePbi+2J3dpRVsGQbVE5bTcHSoHZPVcim/YxnvB8K0a9M3csW5uIsSIESNGjBgxYsSIEaM1WRYjT9aFV3B9uQaplpldwLq+PlkxLGoLPtyNC8jgvF8LmwC7dm6W6iN45csy5KDQXrkjbV+bNLOc9xso13O9mO+e365ht5zJW9aaLn68PjkjTcniipViuY+dBQmwLdZ+vD459TTUJ+mk/EKapmPwJhR3wfF4hO8/fnvzjSW2tm4MQRGUk5iH3Wml+dmpPMgvcTLPqNIlp30dXTvEic2NR+i5d7Zbzkgnt7u7OyfZQZeNNPHtbKSexHbLGRyPRxYrzaRPP5VtuyhBaiY4Oh4TF74EQ0OH0F3iypzWxUTWh3wJB+NzGYxvtw/ak5sEFhG1XTVUOa2R48YWwCqHjYk81HXWBsDUznIrvrCuC9e4rSueYdmo4rB+Mdy2b2v1pgKxJA9CBey324fifSTANgpFVm37lBNcX1+YafZQZ68PYHXAJZMHnQtVMLtgbdP/1OXBVwdmopsoD5UHXatoA3tbgeXSxWPqz3We/zblvl21gzb22uqUJLftD5EE3Vu0xF6YzDOjW5yADAiOdl8FAGg7wXVboaChS1xHDpqW2Nx7IrwV13V1tg5m37EOlYOh4HLckGwMAu1FH+BqsZdzwzS1HFAxtxfAPpehpcwB0zTFjjkBn9+u4bxfI4WXInF54gd31spJ08ciwoi93HYzDo832Pb6ZJ6Jf6xlA27wW/OHxxu8f3knBRbAwrlii+2psoLiek6NTTmwobmse4JVrKWWA1sTGtZLfpvNJhj2cgdX2WrKRY/lpGaTtbbADUIebANrk7n/yQPX1CxIWeBYZ4DqdrxV1toGFzkA3PQ5LoB1wdxWebAJsMmRK8G3KnWlZKb1V9Xub/1aXbHW5aENQlVv1QQJ+tRwG94LXQLr8ljt1mZCFYCmiw+qOyAUcKGp86WLmZQlStes9XGWi6gz0qEDHMee51ayhxCK58EtIlwZS6h2cUMCF121BVBtNIbGXPwKBx4jh05H6s1LDqz1qrm2LpoLsL7BHb08JAzGQNY1xIm1XMAFiq4h32kXZ3Cp0zOM4BLpLzc54AiukTxwlAOu4CKM6FBhdszVyR64ygFncHvJA2c54A4uwgjOGGfLXJU8cJcDCOgYKzGZZyLPc3H/8i7yPBeTeSYoT3P6isztw8rIWqLDgeqshVjPted7wFgVs0OCIEjxF/pDe3q0qcN+AAAAAElFTkSuQmCC" alt="">Commander <span>2</span></h1><div class="sub">Reboned · Release 1.0</div></div>
+      <div class="hazard"></div>
+      <section class="panel"><h2>Status</h2><div id="status">Preparing persistent game data…</div></section>
+      <div class="controls">
+        <button id="data-button" type="button" title="Download the game files for local play, or install them from your own copy">Download local</button>
+        <button id="fullscreen" type="button">Fullscreen</button>
+      </div>
+      <section class="panel logwrap"><h2>System log</h2><pre id="log"></pre></section>
+      <div class="foot">Hold ESC to leave fullscreen</div>
+    </div>
+  </aside>
+  <script>
+    const output = document.getElementById('log');
+    const status = document.getElementById('status');
+    const canvas = document.getElementById('canvas');
+    const gameShell = document.getElementById('game-shell');
+    const fullscreenButton = document.getElementById('fullscreen');
+    const exitFullscreenButton = document.getElementById('exit-fullscreen');
+    const shellQuery = new URLSearchParams(location.search);
+
+    // Pointer lock is what keeps the cursor inside the game on a multi-monitor
+    // desktop; without it the pointer walks off the edge onto the second screen.
+    // It has to be requested from the same user gesture that entered fullscreen.
+    // A locked pointer hides the system cursor, so lock only while the game is
+    // drawing its own (its art is deferred until the first load screen, and
+    // screens switch it off) -- and let go the moment it stops. Owner report
+    // 2026-09-29: "mouse is no longer visible in the menus" in fullscreen.
+    function gameDrawsCursor() {
+      try { return typeof Module !== 'undefined' && !!Module._mc2_game_cursor_visible && Module._mc2_game_cursor_visible() === 1; }
+      catch (error) { return false; }
+    }
+    setInterval(() => {
+      if (document.pointerLockElement === canvas && !gameDrawsCursor()) document.exitPointerLock();
+      // Windowed, the system pointer would sit on top of the game's own: hide it
+      // over the canvas only while the game is drawing one.
+      canvas.style.cursor = gameDrawsCursor() ? 'none' : '';
+    }, 250);
+    async function lockPointer() {
+      if (!canvas.requestPointerLock || !gameDrawsCursor()) return;
+      try { await canvas.requestPointerLock(); }
+      catch (error) { append(`[shell] pointer lock failed: ${error.message || error}`); }
+    }
+    // Release 1.0: inside the product page's iframe, Keyboard Lock (top-level
+    // documents only) cannot keep ESC for the game, so a tap of ESC left
+    // fullscreen. The parent page does the fullscreen + lock instead; it reports
+    // back with { mc2: 'fullscreen-state', active }.
+    const embedded = window.parent !== window;
+    let parentFullscreen = false;
+    window.addEventListener('message', event => {
+      if (event.source !== window.parent || !event.data || event.data.mc2 !== 'fullscreen-state') return;
+      parentFullscreen = !!event.data.active;
+      fullscreenButton.textContent = parentFullscreen ? 'EXIT FULLSCREEN' : 'FULLSCREEN';
+      const bootButton = document.getElementById('boot-fullscreen');
+      if (bootButton) bootButton.textContent = parentFullscreen ? 'Windowed' : 'Fullscreen';
+      if (parentFullscreen) { canvas.focus(); lockPointer(); }
+      else if (document.pointerLockElement === canvas) document.exitPointerLock();
+    });
+    fullscreenButton.addEventListener('click', async () => {
+      if (embedded) {
+        // Pointer lock must come from this same gesture, inside this document.
+        window.parent.postMessage({ mc2: parentFullscreen ? 'exit-fullscreen' : 'request-fullscreen' }, '*');
+        if (!parentFullscreen) await lockPointer();
+        return;
+      }
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else { await gameShell.requestFullscreen({ navigationUI: 'hide' }); await lockPointer(); }
+      } catch (error) {
+        append(`[shell] fullscreen request failed: ${error.message || error}`);
+      }
+    });
+    // Escape releases the pointer without leaving fullscreen, so let a click take
+    // it back rather than stranding the player with a cursor that escapes.
+    canvas.addEventListener('mousedown', () => {
+      if ((document.fullscreenElement || parentFullscreen) && document.pointerLockElement !== canvas) lockPointer();
+    });
+    exitFullscreenButton.addEventListener('click', async event => {
+      event.stopPropagation();
+      if (parentFullscreen) window.parent.postMessage({ mc2: 'exit-fullscreen' }, '*');
+      if (document.fullscreenElement) await document.exitFullscreen();
+      canvas.focus();
+    });
+    document.addEventListener('fullscreenchange', () => {
+      const active = document.fullscreenElement === gameShell;
+      fullscreenButton.textContent = active ? 'EXIT FULLSCREEN' : 'FULLSCREEN';
+      if (active) { canvas.focus(); lockPointer(); lockEscape(); }
+      else { if (document.pointerLockElement === canvas) document.exitPointerLock(); navigator.keyboard?.unlock?.(); }
+    });
+    // Owner's request 2026-09-29: keep ESC for the game in fullscreen. The Keyboard
+    // Lock API (Chrome/Edge desktop, fullscreen entered by requestFullscreen) sends
+    // a tap of ESC to the page; the browser then leaves fullscreen on a long press
+    // and says so on screen. Where it is unsupported ESC behaves as before and P
+    // still does every in-mission ESC job.
+    async function lockEscape() {
+      if (!navigator.keyboard || !navigator.keyboard.lock) { append('[shell] keyboard lock unsupported -- ESC leaves fullscreen'); return; }
+      try { await navigator.keyboard.lock(['Escape']); append('[shell] keyboard lock: ESC goes to the game (hold ESC to leave fullscreen)'); }
+      catch (error) { append(`[shell] keyboard lock failed: ${error.message || error}`); }
+    }
+
+    // PORT (C2): LIFT THE AUTOPLAY BLOCK ON THE FIRST GESTURE.
+    //
+    // A browser AudioContext starts suspended until the page has been
+    // interacted with. The web audio backend counts every play submitted while
+    // suspended and reports it at shutdown, so "the browser never let us start"
+    // and "we never tried" cannot be confused -- but the fix belongs here,
+    // because only the page sees the gesture.
+    let audioResumed = false;
+    function resumeAudio() {
+      if (audioResumed) return;
+      audioResumed = true;
+      try { if (Module._mc2_audio_resume) Module._mc2_audio_resume(); } catch (e) {}
+    }
+    for (const kind of ['pointerdown', 'keydown', 'touchstart'])
+      addEventListener(kind, resumeAudio, { once: false, passive: true });
+
+    // ?keyprobe=1 (M8-B84): the owner's hotkeys did nothing in play while the
+    // same keys sent over CDP worked, so record what real presses look like on
+    // the way in -- where focus was, fullscreen, pointer lock -- and whether the
+    // canvas (the only element the engine listens on) ever lost focus.
+    if (shellQuery.get('keyprobe') === '1') {
+      let keyLines = 0;
+      const where = () => `active=${document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : 'none'}` +
+        ` fs=${document.fullscreenElement ? 1 : 0} pl=${document.pointerLockElement ? 1 : 0} vis=${document.visibilityState}`;
+      for (const kind of ['keydown', 'keyup'])
+        addEventListener(kind, e => {
+          if (keyLines++ < 400)
+            append(`[keyprobe] ${kind} key=${e.key} code=${e.code} kc=${e.keyCode} rep=${e.repeat ? 1 : 0}` +
+                   ` target=${e.target.id || e.target.tagName} prevented=${e.defaultPrevented ? 1 : 0} ${where()}`);
+        }, true);
+      canvas.addEventListener('blur', () => append(`[keyprobe] canvas blur ${where()}`));
+      canvas.addEventListener('focus', () => append(`[keyprobe] canvas focus ${where()}`));
+      addEventListener('blur', () => append(`[keyprobe] window blur ${where()}`));
+    }
+
+    // The right button is a game control (camera rotation), not a request for
+    // browser chrome.  Suppress Firefox/Chromium's context menu only over the
+    // game surface and retain normal right-click behaviour everywhere else.
+    canvas.addEventListener('contextmenu', event => event.preventDefault());
+    // Keep EVERY argument. Emscripten's err() is called as
+    // err('unexpected error:', exception, exception.stack); a single-parameter
+    // handler silently drops the exception and the stack, which is exactly how
+    // 17 OPFS failures per run read as a bare "unexpected error:" and went
+    // unnoticed through the M5-5 review. A log surface that discards the
+    // diagnostic is worse than no log surface.
+    const pendingLogLines = [];
+    let logViewTimer = 0;
+    function flushLogView() {
+      logViewTimer = 0;
+      if (!pendingLogLines.length) return;
+      output.appendChild(document.createTextNode(pendingLogLines.join('\n') + '\n'));
+      pendingLogLines.length = 0;
+      while (output.childNodes.length > 400) output.removeChild(output.firstChild);
+      output.scrollTop = output.scrollHeight;
+    }
+    function append(...parts) {
+      const line = parts.map(part => {
+        if (part instanceof Error) return `${part.name}: ${part.message}`;
+        if (part && typeof part === 'object') {
+          try { return JSON.stringify(part); } catch (e) { return String(part); }
+        }
+        return String(part);
+      }).join(' ');
+      // M8-B83: `textContent +=` rewrote the WHOLE log per line and forced a
+      // layout with the scroll. Measured: 100 lines cost 89 ms on a small log
+      // and 12,815 ms on a 3 MB one, so a burst of engine warnings froze the
+      // game for seconds. Lines are now batched into one text node per 100 ms
+      // and the on-page view keeps the newest 400 batches. The diagnostics
+      // copy (loopProbe below) still receives every line.
+      pendingLogLines.push(line);
+      if (!logViewTimer) logViewTimer = setTimeout(flushLogView, 100);
+      loopProbe.observe(line);
+      if (window.__mc2BootObserve) window.__mc2BootObserve(line);
+    }
+
+    // M8-B41 loop probe. Whether the main loop ticks under a given scheduler is
+    // decided by the engine's own "[GameOS] tick progress" lines, not by how the
+    // screen looks. On localhost the result is beaconed to the diagnostics server
+    // at 10 s and 30 s after the loop starts, so nobody has to read or copy a log.
+    // ticks=0 at 30 s is a real, reportable outcome.
+    const loopProbe = {
+      loopStartedAt: 0, ticks: 0, renderer: null,
+      observe(line) {
+        if (line.startsWith('[GameOS] entering main loop')) {
+          this.loopStartedAt = performance.now();
+          setTimeout(() => this.send(10), 10000);
+          setTimeout(() => this.send(30), 30000);
+          setInterval(() => this.sampleAudio(), 100);
+          setInterval(() => this.sendAudio(), 60000);
+          if (shellQuery.get('frameprobe') === '1') this.startFrameProbe();
+        }
+        const tick = /^\[GameOS\] tick progress: (\d+)/.exec(line);
+        if (tick) this.ticks = Number(tick[1]);
+        else if (!line.startsWith('[audio-trace]') && this.logChars < 4000000) {
+          this.logBuf.push(line.length > 2000 ? line.slice(0, 2000) : line);
+          this.logChars += line.length;
+          if (!this.logTimer) this.logTimer = setInterval(() => this.flushLog(false), 20000);
+        }
+        if (line.startsWith('[renderer]') && !this.renderer) this.renderer = line.slice(0, 200);
+        // A clean in-game EXIT leaves the last menu frame on the canvas, which
+        // reads as a hang. Say what happened, and ship the log now.
+        if (line.startsWith('[GameOS] TerminateGameEngine returned')) {
+          status.textContent = 'MechCommander 2 has exited. Reload the page to play again.';
+          const note = document.createElement('div');
+          note.textContent = 'MechCommander 2 has exited — reload the page to play again.';
+          note.style.cssText = 'position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);z-index:1500;' +
+            'padding:18px 26px;background:rgba(8,13,18,.92);border:1px solid #52789a;color:#f2a23a;' +
+            'font:16px Consolas,monospace;border-radius:4px';
+          document.body.appendChild(note);
+          if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+          setTimeout(() => { this.sendAudio(); this.flushLog(false); }, 0);
+        }
+      },
+      // ?frameprobe=1 (B1-3): the browser's real frame pace, measured between
+      // animation frames and beaconed every 10 s. under45/under30 count frames
+      // slower than 22.2 ms / 33.3 ms. Hidden-tab windows are flagged, because
+      // the browser throttles them and they say nothing about the game.
+      startFrameProbe() {
+        let last = 0, n = 0, sum = 0, worst = 0, u45 = 0, u30 = 0, hidden = false;
+        const step = now => {
+          if (last) { const d = now - last; n++; sum += d; if (d > worst) worst = d; if (d > 22.2) u45++; if (d > 33.3) u30++; }
+          if (document.visibilityState !== 'visible') hidden = true;
+          last = now; requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+        setInterval(() => {
+          this.post({ kind: 'frame-probe', time: new Date().toISOString(),
+            secondsSinceLoop: Math.round((performance.now() - this.loopStartedAt) / 1000),
+            frames: n, meanMs: n ? Number((sum / n).toFixed(2)) : 0, worstMs: Number(worst.toFixed(1)),
+            under45: u45, under30: u30, hidden });
+          n = 0; sum = 0; worst = 0; u45 = 0; u30 = 0; hidden = false;
+        }, 10000);
+      },
+      // Browser audio probe: what reached Web Audio per channel (channel map in
+      // audio_common.cpp kFamilies: 16/17 music, 18 voice/movie, ...) and the
+      // loudest sample that actually came out of the analyser before the
+      // speakers. outputPeak 0 with plays > 0 means requested but silent.
+      audioPeak: 0, audioPeakWindow: 0, audioBuf: null,
+      sampleAudio() {
+        const a = typeof Module !== 'undefined' && Module.mc2Audio;
+        if (!a || !a.analyser) return;
+        if (!this.audioBuf) this.audioBuf = new Float32Array(a.analyser.fftSize);
+        a.analyser.getFloatTimeDomainData(this.audioBuf);
+        let peak = 0;
+        for (const v of this.audioBuf) { const m = v < 0 ? -v : v; if (m > peak) peak = m; }
+        if (peak > this.audioPeakWindow) this.audioPeakWindow = peak;
+        if (peak > this.audioPeak) this.audioPeak = peak;
+      },
+      sendAudio() {
+        const a = typeof Module !== 'undefined' && Module.mc2Audio;
+        const byChannel = {};
+        if (a) for (const [ch, t] of Object.entries(a.byChannel || {}))
+          byChannel[ch] = { plays: t.plays, loudest: Number(t.loudest.toFixed(4)) };
+        this.post({ kind: 'audio-probe', time: new Date().toISOString(),
+          secondsSinceLoop: Math.round((performance.now() - this.loopStartedAt) / 1000),
+          ticksAtLeast: this.ticks, ctxState: a ? a.ctx.state : 'no-context',
+          plays: a ? a.plays : 0, submittedWhileSuspended: a ? a.blocked : 0, byChannel,
+          outputPeakLastMinute: Number(this.audioPeakWindow.toFixed(4)),
+          outputPeakSession: Number(this.audioPeak.toFixed(4)), visibility: document.visibilityState,
+          effectsMade: (typeof Module !== 'undefined' && Module._mc2_fx_made) ? Module._mc2_fx_made() : -1 });
+        this.audioPeakWindow = 0;
+      },
+      // The page log, shipped to the diagnostics server in 20 s batches (and the
+      // remainder on page hide/close), so a playtest's full log survives without
+      // anyone saving it. Tick-progress and per-slider audio traces are dropped;
+      // the loop and audio probes carry those numbers.
+      session: Math.random().toString(36).slice(2, 10), logBuf: [], logChars: 0, logSeq: 0, logTimer: 0,
+      flushLog(closing) {
+        while (this.logBuf.length) {
+          const lines = [];
+          let size = 0;
+          while (this.logBuf.length && size < 30000) { const l = this.logBuf.shift(); lines.push(l); size += l.length + 8; }
+          const body = JSON.stringify({ kind: 'log', session: this.session, seq: ++this.logSeq,
+            time: new Date().toISOString(), lines });
+          if (!(location.hostname === '127.0.0.1' || location.hostname === 'localhost')) return;
+          try {
+            if (closing) navigator.sendBeacon('/__mc2_diag', new Blob([body], { type: 'application/json' }));
+            else fetch('/__mc2_diag', { method: 'POST', body, headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+          } catch {}
+          if (closing) return;   // one beacon fits the unload quota; the rest is best effort
+        }
+      },
+      post(payload) {
+        try {
+          if (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
+            navigator.sendBeacon('/__mc2_diag', new Blob([JSON.stringify(payload)], { type: 'application/json' }));
+        } catch {}
+      },
+      send(atSeconds) {
+        const payload = JSON.stringify({ kind: 'loop-probe', time: new Date().toISOString(),
+          atSeconds, scheduler: (typeof ENV !== 'undefined' && ENV.MC2_BROWSER_SCHEDULER) || 'raf',
+          ticksAtLeast: this.ticks, renderer: this.renderer, hasNavigatorGpu: !!navigator.gpu,
+          canvas: `${canvas.width}x${canvas.height}`, visibility: document.visibilityState,
+          rafFired: !!window.__mc2RafFired, userAgent: navigator.userAgent.slice(0, 160) });
+        try {
+          if (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
+            navigator.sendBeacon('/__mc2_diag', new Blob([payload], { type: 'application/json' }));
+        } catch {}
+      }
+    };
+    addEventListener('pagehide', () => loopProbe.flushLog(true));
+    addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') loopProbe.flushLog(false); });
+
+    const previousFault = localStorage.getItem('mc2-last-fault');
+    if (previousFault)
+      append(`[shell] previous browser stop - fault: ${previousFault}`);
+    const previousBuildingHit = localStorage.getItem('mc2-last-building-hit');
+    if (previousBuildingHit)
+      append(`[shell] previous browser stop — last building-hit boundary: ${previousBuildingHit}`);
+    const previousWeaponStage = localStorage.getItem('mc2-last-weapon-stage');
+    if (previousWeaponStage)
+      append(`[shell] previous browser stop — last weapon boundary: ${previousWeaponStage}`);
+
+    // PORT: a wasm trap surfaces as an unhandled promise rejection whose stack is
+    // the ONLY pointer to the faulting function. Without this the log shows a bare
+    // "Aborted(native code called abort())" and the actual fault -- which may be an
+    // earlier out-of-bounds access -- is lost entirely.
+    //
+    // A wasm trap escaping the main-loop callback stops the game with no further
+    // output, so the trace must survive the tab being closed. This is the only
+    // instrumentation that is always on: it costs nothing until something faults,
+    // and it is what identified the EffectLibrary out-of-bounds combat freeze.
+    function recordFault(kind, message, stack) {
+      append(`[shell] ${kind}: ${message}`);
+      try {
+        // Show the FIRST fault and count the rest. The first one is the cause; the
+        // ones after it are usually the game staggering on and are noise.
+        recordFault.seen = (recordFault.seen || 0) + 1;
+        const banner = document.getElementById('fault-banner');
+        banner.style.display = 'block';
+        if (recordFault.seen === 1) {
+          banner.innerHTML = '';
+          const head = document.createElement('b');
+          head.textContent = `MechCommander 2 hit an error (${kind}). `;
+          banner.appendChild(head);
+          banner.appendChild(document.createTextNode(String(message)));
+          recordFault.more = document.createElement('div');
+          banner.appendChild(recordFault.more);
+        }
+        if (recordFault.seen > 1 && recordFault.more)
+          recordFault.more.textContent = `+ ${recordFault.seen - 1} further error(s); the first one above is the cause. Full detail is in the log below.`;
+      } catch {}
+      if (stack) append(`[shell] stack:\n${stack}`);
+      const payload = JSON.stringify({ kind: 'fault', source: kind, time: new Date().toISOString(),
+        message: String(message), stack: stack ? String(stack).slice(0, 4000) : null });
+      try { localStorage.setItem('mc2-last-fault', payload); } catch {}
+      try {
+        if (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
+          navigator.sendBeacon('/__mc2_diag', new Blob([payload], { type: 'application/json' }));
+      } catch {}
+    }
+    // The engine's STOP() handler calls this, so a fatal engine error is reported
+    // and recorded instead of silently killing the wasm program.
+    window.mc2RecordFault = recordFault;
+    addEventListener('unhandledrejection', event => {
+      const reason = event.reason;
+      recordFault('unhandled rejection', (reason && reason.message) || reason, reason && reason.stack);
+    });
+    addEventListener('error', event => {
+      recordFault('error', event.message, event.error && event.error.stack);
+    });
+
+    // =====================================================================
+    // DELIVERY: MANIFEST v2, NAMED PACKS  (C2, owner ruling 2026-09-02)
+    //
+    // "Package it all, but include the capability for us to pivot to 3 easily
+    // if need be. In that same vein, we should have download options for
+    // players to download both pieces so that some players will already have
+    // it if we ever need to stop giving it to them."
+    //
+    // Each pack declares where its bytes come from:
+    //   source "bundled"  fetch from this server        (today)
+    //   source "local"    the player supplies it        (the pivot)
+    // Throwing the switch is editing one word in the manifest. It is not a
+    // rebuild, and it does not disturb a player who already installed, because
+    // installs are keyed on a PER-PACK version marker.
+    //
+    // ONE MARKER PER PACK IS LOAD-BEARING. The previous single `.mc2-version`
+    // meant any change re-fetched the whole 430 MiB.
+    // =====================================================================
+    const packState = { manifest: null, packs: [], installed: new Map() };
+
+    function packMarkerName(id) { return `.mc2-pack-${id}`; }
+
+    async function readMarker(root, name) {
+      try { return await (await root.getFileHandle(name)).getFile().then(f => f.text()); }
+      catch { return ''; }
+    }
+    async function writeMarker(root, name, value) {
+      const handle = await root.getFileHandle(name, { create: true });
+      const writer = await handle.createWritable();
+      await writer.write(value);
+      await writer.close();
+    }
+    async function writeInto(root, relative, body) {
+      const parts = relative.split('/');
+      let directory = root;
+      for (const part of parts.slice(0, -1))
+        directory = await directory.getDirectoryHandle(part, { create: true });
+      const handle = await directory.getFileHandle(parts.at(-1), { create: true });
+      const writable = await handle.createWritable();
+      if (body instanceof ReadableStream) await body.pipeTo(writable);
+      else { await writable.write(body); await writable.close(); }
+    }
+
+    // A v1 manifest still loads: treat the whole thing as one bundled required
+    // pack. Without this a stale game-data tree would fail with a bare
+    // "cannot read properties of undefined", which says nothing.
+    function packsFrom(manifest) {
+      if (Array.isArray(manifest.packs)) return manifest.packs;
+      return [{ id: 'core', label: 'Game data', required: true, source: 'bundled',
+                version: manifest.version, bytes: manifest.bytes, files: manifest.files }];
+    }
+
+    let dataBytesDone = 0, dataBytesTotal = 0, dataFilesDone = 0, dataFilesTotal = 0;
+    async function installPack(root, pack, report) {
+      let completed = 0;
+      const install = async file => {
+        const response = await fetch(`game-data/${file.path}`);
+        if (!response.ok) throw new Error(`${file.path}: HTTP ${response.status}`);
+        // Count bytes as they stream in, so the loading bars move through the
+        // large archives instead of jumping when each one finishes.
+        let streamed = 0, streamEnd = 0;
+        const t0 = performance.now();
+        const counted = response.body.pipeThrough(new TransformStream({ transform(chunk, ctl) {
+          streamed += chunk.byteLength; dataBytesDone += chunk.byteLength;
+          if (window.__mc2DataProgress) window.__mc2DataProgress(dataBytesDone, dataBytesTotal, dataFilesDone, dataFilesTotal);
+          ctl.enqueue(chunk);
+        }, flush() { streamEnd = performance.now(); } }));
+        await writeInto(root, file.path, counted);
+        // ?installtrace=1: per-file timing (download vs storage commit), for diagnosis.
+        if (shellQuery.get('installtrace') === '1')
+          (window.__mc2InstallTrace ||= []).push({ path: file.path, size: file.size, stream: Math.round(streamEnd - t0), commit: Math.round(performance.now() - streamEnd), at: Math.round(t0) });
+        completed++;
+        dataBytesDone += Math.max(0, (file.size || 0) - streamed);
+        dataFilesDone++;
+        if (window.__mc2DataProgress) window.__mc2DataProgress(dataBytesDone, dataBytesTotal, dataFilesDone, dataFilesTotal);
+        report(`Installing ${pack.label} ${completed}/${pack.files.length}`);
+      };
+      let cursor = 0;
+      await Promise.all(Array.from({ length: 6 }, async () => {
+        while (cursor < pack.files.length) await install(pack.files[cursor++]);
+      }));
+      await writeMarker(root, packMarkerName(pack.id), pack.version);
+    }
+
+    async function populateOpfs() {
+      const manifest = await fetch('game-data/manifest.json').then(response => {
+        if (!response.ok) throw new Error(`manifest HTTP ${response.status}`);
+        return response.json();
+      });
+      const root = await navigator.storage.getDirectory();
+      packState.manifest = manifest;
+      packState.packs = packsFrom(manifest);
+
+      // NOTE: v1 deleted mc2res.txt here every load. That was safe only because
+      // v1 reinstalled EVERYTHING whenever its single marker missed, so the file
+      // came straight back. With per-pack markers core is not reinstalled once
+      // its marker matches, so the same line deleted the string table
+      // permanently -- the game then logged "resource string table 'mc2res.txt'
+      // not found" and rendered every string as a placeholder. The packager
+      // ships mc2res.txt deliberately (C3: shipping the 244 KB table is what
+      // dissolved the font-name problem), so there is nothing to strip.
+
+      // Loading-bar total: bytes of every pack that still has to be installed.
+      for (const pack of packState.packs)
+        if (pack.source !== 'local' && (await readMarker(root, packMarkerName(pack.id))) !== pack.version) { dataBytesTotal += pack.bytes; dataFilesTotal += pack.files.length; }
+      const missing = [];
+      for (const pack of packState.packs) {
+        const marker = await readMarker(root, packMarkerName(pack.id));
+        const ready = marker === pack.version;
+        packState.installed.set(pack.id, ready);
+        if (ready) continue;
+
+        if (pack.source === 'local') {
+          // THE PIVOT, IN ITS OTHER POSITION. Nothing is fetched. A required
+          // pack we cannot supply is fatal; an optional one is not, and that
+          // is what makes "local" survivable rather than broken.
+          if (pack.required) throw new Error(`${pack.label} must be supplied before the game can start`);
+          missing.push(pack);
+          continue;
+        }
+        await installPack(root, pack, text => { status.textContent = text; });
+        packState.installed.set(pack.id, true);
+      }
+
+      const ready = packState.packs.filter(p => packState.installed.get(p.id));
+      const bytes = ready.reduce((n, p) => n + p.bytes, 0);
+      status.textContent = missing.length
+        ? `Game data ready — ${missing.map(p => p.label).join(' and ')} not installed`
+        : `Game data ready (${(bytes / 1048576).toFixed(1)} MiB)`;
+      if (missing.length)
+        append(`[shell] not installed: ${missing.map(p => p.id).join(', ')} — open GAME DATA to supply or download`);
+    }
+
+    // =====================================================================
+    // The keep-a-copy half of the ruling.
+    //
+    // DOWNLOAD and EXPORT are NOT the same thing and only one of them does
+    // what was actually asked for:
+    //   download  a link to the prepared archive on this server. Needs us to
+    //             still be serving it.
+    //   export    zips what is ALREADY in this player's OPFS and saves it,
+    //             fetching nothing. This is the one that means a player who
+    //             installed months ago still has a copy if it is withdrawn.
+    // IMPORT takes either -- our archive, or a folder from the player's own
+    // retail install. One destination, several sources.
+    //
+    // The archives are STORED zips (no compression): the payload is wav and
+    // pak data deflate barely touches, and stored is trivial to read back.
+    // =====================================================================
+    const CRC_TABLE = (() => {
+      const table = new Int32Array(256);
+      for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+        table[n] = c;
+      }
+      return table;
+    })();
+    function crc32(bytes) {
+      let c = -1;
+      for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+      return (c ^ -1) >>> 0;
+    }
+
+    async function readOpfsFile(root, relative) {
+      const parts = relative.split('/');
+      let directory = root;
+      for (const part of parts.slice(0, -1)) directory = await directory.getDirectoryHandle(part);
+      const file = await (await directory.getFileHandle(parts.at(-1))).getFile();
+      return new Uint8Array(await file.arrayBuffer());
+    }
+
+    async function exportPack(pack, report) {
+      const root = await navigator.storage.getDirectory();
+      const chunks = [];
+      const central = [];
+      let offset = 0;
+      let done = 0;
+      for (const file of pack.files) {
+        const data = await readOpfsFile(root, file.path);
+        const name = new TextEncoder().encode(file.path);
+        const sum = crc32(data);
+        const local = new DataView(new ArrayBuffer(30));
+        local.setUint32(0, 0x04034b50, true);
+        local.setUint16(4, 20, true);
+        local.setUint16(8, 0, true);
+        local.setUint32(14, sum, true);
+        local.setUint32(18, data.length, true);
+        local.setUint32(22, data.length, true);
+        local.setUint16(26, name.length, true);
+        chunks.push(new Uint8Array(local.buffer), name, data);
+        const entry = new DataView(new ArrayBuffer(46));
+        entry.setUint32(0, 0x02014b50, true);
+        entry.setUint16(4, 20, true);
+        entry.setUint16(6, 20, true);
+        entry.setUint16(10, 0, true);
+        entry.setUint32(16, sum, true);
+        entry.setUint32(20, data.length, true);
+        entry.setUint32(24, data.length, true);
+        entry.setUint16(28, name.length, true);
+        entry.setUint32(42, offset, true);
+        central.push(new Uint8Array(entry.buffer), name);
+        offset += 30 + name.length + data.length;
+        report(`Exporting ${pack.label} ${++done}/${pack.files.length}`);
+      }
+      const directoryBytes = central.reduce((n, c) => n + c.length, 0);
+      const end = new DataView(new ArrayBuffer(22));
+      end.setUint32(0, 0x06054b50, true);
+      end.setUint16(8, pack.files.length, true);
+      end.setUint16(10, pack.files.length, true);
+      end.setUint32(12, directoryBytes, true);
+      end.setUint32(16, offset, true);
+      const blob = new Blob([...chunks, ...central, new Uint8Array(end.buffer)],
+                            { type: 'application/zip' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `mc2-${pack.id}.zip`;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+
+    function readStoredZip(buffer) {
+      const view = new DataView(buffer);
+      let eocd = -1;
+      for (let i = buffer.byteLength - 22; i >= 0 && i > buffer.byteLength - 22 - 65536; i--)
+        if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+      if (eocd < 0) throw new Error('not a zip archive');
+      const count = view.getUint16(eocd + 10, true);
+      let p = view.getUint32(eocd + 16, true);
+      const entries = [];
+      for (let n = 0; n < count; n++) {
+        if (view.getUint32(p, true) !== 0x02014b50) throw new Error('damaged central directory');
+        const method = view.getUint16(p + 10, true);
+        const size = view.getUint32(p + 24, true);
+        const nameLength = view.getUint16(p + 28, true);
+        const extraLength = view.getUint16(p + 30, true);
+        const commentLength = view.getUint16(p + 32, true);
+        const localOffset = view.getUint32(p + 42, true);
+        const name = new TextDecoder().decode(new Uint8Array(buffer, p + 46, nameLength));
+        // Deliberately explicit rather than silently skipping: an archive made
+        // by another tool with compression would otherwise install as garbage.
+        if (method !== 0) throw new Error(`${name}: compressed entries are not supported`);
+        entries.push({ name, size, localOffset });
+        p += 46 + nameLength + extraLength + commentLength;
+      }
+      for (const entry of entries) {
+        const nameLength = view.getUint16(entry.localOffset + 26, true);
+        const extraLength = view.getUint16(entry.localOffset + 28, true);
+        entry.dataOffset = entry.localOffset + 30 + nameLength + extraLength;
+      }
+      return entries;
+    }
+
+    async function importArchive(pack, file, report) {
+      const buffer = await file.arrayBuffer();
+      const entries = readStoredZip(buffer);
+      const root = await navigator.storage.getDirectory();
+      let done = 0;
+      for (const entry of entries) {
+        await writeInto(root, entry.name,
+                        new Uint8Array(buffer, entry.dataOffset, entry.size));
+        report(`Importing ${pack.label} ${++done}/${entries.length}`);
+      }
+      await writeMarker(root, packMarkerName(pack.id), pack.version);
+      packState.installed.set(pack.id, true);
+    }
+
+    // The player's own retail install. They pick the folder that CONTAINS the
+    // pack's files; we take only what the manifest names, so pointing at a
+    // whole MechCommander 2 directory works and copies nothing extra.
+    async function importFolder(pack, report) {
+      const directory = await window.showDirectoryPicker({ mode: 'read' });
+      const root = await navigator.storage.getDirectory();
+      let done = 0, found = 0;
+      for (const file of pack.files) {
+        const parts = file.path.split('/');
+        let source = directory;
+        try {
+          for (const part of parts.slice(0, -1)) source = await source.getDirectoryHandle(part);
+          const handle = await source.getFileHandle(parts.at(-1));
+          await writeInto(root, file.path, await (await handle.getFile()).arrayBuffer());
+          found++;
+        } catch { /* absent in their copy; counted below */ }
+        report(`Reading ${pack.label} ${++done}/${pack.files.length}`);
+      }
+      if (!found) throw new Error(`no ${pack.label} files found in that folder`);
+      if (found === pack.files.length) await writeMarker(root, packMarkerName(pack.id), pack.version);
+      return { found, total: pack.files.length };
+    }
+
+    // ---- the panel ------------------------------------------------------
+    const dataPanel = document.getElementById('data-panel');
+    const dataBody = document.getElementById('data-body');
+    document.getElementById('data-close').addEventListener('click', () => dataPanel.close());
+    document.getElementById('data-button').addEventListener('click', () => { renderPacks(); dataPanel.showModal(); });
+
+    function renderPacks() {
+      dataBody.innerHTML = '';
+      if (!packState.packs.length) {
+        dataBody.textContent = 'Game data has not been read yet.';
+        return;
+      }
+      for (const pack of packState.packs) {
+        const ready = packState.installed.get(pack.id);
+        const card = document.createElement('div');
+        card.className = 'pack';
+        const title = document.createElement('h3');
+        title.textContent = pack.label;
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.textContent = `${pack.files.length} files · ${(pack.bytes / 1048576).toFixed(1)} MiB · `
+          + `${ready ? 'installed' : 'not installed'} · served: ${pack.source === 'bundled' ? 'yes' : 'no, you supply it'}`;
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+
+        if (pack.source === 'bundled') {
+          const link = document.createElement('a');
+          // archiveBase (manifest, optional): where the pack zips live when they
+          // are not served beside the data -- GitHub Pages caps files at 100 MB,
+          // so the public build points this at its release assets.
+          const archiveBase = (packState.manifest && packState.manifest.archiveBase) || 'game-data/packs/';
+          link.href = `${archiveBase}${pack.id}.zip`;
+          link.download = `mc2-${pack.id}.zip`;
+          link.textContent = 'DOWNLOAD';
+          link.title = 'Download the prepared archive from this server';
+          actions.appendChild(link);
+        }
+
+        const exportButton = document.createElement('button');
+        exportButton.type = 'button';
+        exportButton.textContent = 'SAVE MY COPY';
+        exportButton.title = 'Save what is already installed here, without downloading anything';
+        exportButton.disabled = !ready;
+        exportButton.addEventListener('click', async () => {
+          try { await exportPack(pack, text => { status.textContent = text; }); status.textContent = 'Copy saved'; }
+          catch (error) { append(`[shell] export failed: ${error.message || error}`); }
+        });
+        actions.appendChild(exportButton);
+
+        const importButton = document.createElement('button');
+        importButton.type = 'button';
+        importButton.textContent = 'IMPORT ARCHIVE';
+        importButton.addEventListener('click', () => {
+          const picker = document.createElement('input');
+          picker.type = 'file';
+          picker.accept = '.zip';
+          picker.addEventListener('change', async () => {
+            if (!picker.files.length) return;
+            try {
+              await importArchive(pack, picker.files[0], text => { status.textContent = text; });
+              status.textContent = `${pack.label} installed from archive`;
+              renderPacks();
+            } catch (error) { append(`[shell] import failed: ${error.message || error}`); }
+          });
+          picker.click();
+        });
+        actions.appendChild(importButton);
+
+        if (window.showDirectoryPicker) {
+          const folderButton = document.createElement('button');
+          folderButton.type = 'button';
+          folderButton.textContent = 'USE MY GAME FOLDER';
+          folderButton.title = 'Point at your own MechCommander 2 install';
+          folderButton.addEventListener('click', async () => {
+            try {
+              const result = await importFolder(pack, text => { status.textContent = text; });
+              status.textContent = `${pack.label}: ${result.found}/${result.total} files read from your copy`;
+              renderPacks();
+            } catch (error) {
+              if (error && error.name === 'AbortError') return;
+              append(`[shell] folder import failed: ${error.message || error}`);
+            }
+          });
+          actions.appendChild(folderButton);
+        }
+
+        card.append(title, meta, actions);
+        if (!pack.required) {
+          const note = document.createElement('div');
+          note.className = 'note';
+          note.textContent = 'Optional — the game runs without this, just without those sounds.';
+          card.appendChild(note);
+        }
+        dataBody.appendChild(card);
+      }
+    }
+
+    // Side panel: always starts shut (an open panel covers the game's right-hand
+    // controls, e.g. the pause menu), and a click on the game shuts it.
+    const side = document.getElementById('side');
+    const sideTab = document.getElementById('side-tab');
+    function setSide(open) {
+      side.classList.toggle('open', open);
+      sideTab.setAttribute('aria-expanded', String(open));
+      sideTab.title = open ? 'Hide panel' : 'Show panel';
+      if (!open) canvas.focus();
+    }
+    sideTab.addEventListener('click', () => setSide(!side.classList.contains('open')));
+    canvas.addEventListener('pointerdown', () => { if (side.classList.contains('open')) setSide(false); });
+
+    // Start card. Owner's rulings 2026-09-30: the card ALWAYS holds the game (so
+    // audio is unlocked every run and nothing -- not even the intro -- plays early)
+    // and only LAUNCH releases it. FULLSCREEN just goes fullscreen; the card lives
+    // inside the fullscreen element so it stays on screen until LAUNCH. A loading
+    // bar tracks the game files and the engine; LAUNCH flashes when both are in.
+    // ?autostart=1 (diagnostics only) skips the wait.
+    const bootCard = document.getElementById('boot-card');
+    const bootStatus = document.getElementById('boot-status');
+    const bootFill = document.getElementById('boot-fill');
+    const bootStart = document.getElementById('boot-start');
+    const bootFullscreen = document.getElementById('boot-fullscreen');
+    const ledLine = document.getElementById('led-line');
+    new MutationObserver(() => { bootStatus.textContent = status.textContent; })
+      .observe(status, { childList: true, characterData: true, subtree: true });
+    const needGesture = shellQuery.get('autostart') !== '1';
+    let gestureTaken = false, gestureDepAdded = false;
+
+    // Progress: 85% game files (bytes installed of bytes needed; an installed set
+    // counts as done once checked), 15% the engine (wasm instantiated).
+    const bootProgress = { dataDone: 0, dataTotal: 0, dataChecked: false, engine: false, ready: false };
+    let signpostPending = false;
+    ledLine.classList.add('loading');
+    // Half bytes, half files: measured 2026-09-30, a fresh install spends ~15 s on
+    // ~4,900 tiny texture files (per-file storage overhead) that barely move a
+    // byte count, so a bytes-only bar crawled and then jumped.
+    window.__mc2DataProgress = (done, total, filesDone, filesTotal) => {
+      bootProgress.dataDone = done; bootProgress.dataTotal = total;
+      bootProgress.filesDone = filesDone || 0; bootProgress.filesTotal = filesTotal || 0; updateBoot(); };
+    function updateBoot() {
+      const p = bootProgress;
+      p.engine = p.engine || (typeof wasmExports !== 'undefined' && !!wasmExports);
+      const byBytes = p.dataTotal > 0 ? p.dataDone / p.dataTotal : 0;
+      const byFiles = p.filesTotal > 0 ? p.filesDone / p.filesTotal : byBytes;
+      const data = p.dataChecked ? 1 : Math.min(1, 0.5 * byBytes + 0.5 * byFiles);
+      const pct = `${(Math.min(1, data * 0.85 + (p.engine ? 0.15 : 0)) * 100).toFixed(1)}%`;
+      bootFill.style.width = pct;
+      if (!p.ready) ledLine.style.setProperty('--p', pct);
+      if (!p.ready && p.dataChecked && p.engine) {
+        p.ready = true;
+        bootCard.classList.add('ready');
+        ledLine.classList.remove('loading');
+        if (signpostPending) signpostFullscreen(); else ledLine.classList.add('lit');
+        if (!gestureTaken) bootStatus.textContent = 'Game files loaded — ready to launch';
+      }
+    }
+    const bootTimer = setInterval(() => { updateBoot(); if (bootProgress.ready) clearInterval(bootTimer); }, 150);
+
+    // Embedded on the product page the game loads for every visitor, so a
+    // first-time install (~440 MiB) waits for LAUNCH; a returning player whose
+    // packs are already installed goes straight to "ready".
+    let deferredInstall = null;
+    async function dataAlreadyInstalled() {
+      try {
+        const manifest = await fetch('game-data/manifest.json').then(r => r.json());
+        const root = await navigator.storage.getDirectory();
+        for (const pack of packsFrom(manifest)) {
+          if (pack.source === 'local') continue;
+          if ((await readMarker(root, packMarkerName(pack.id))) !== pack.version) return { ok: false, bytes: manifest.bytes };
+        }
+        return { ok: true };
+      } catch (error) { return { ok: false }; }
+    }
+    function takeGesture(event) {
+      if (gestureTaken) return false;
+      gestureTaken = true;
+      if (deferredInstall) { const install = deferredInstall; deferredInstall = null; install(); }
+      if (event) { event.preventDefault(); event.stopPropagation(); }
+      resumeAudio();
+      bootStart.disabled = true;
+      if (gestureDepAdded) removeRunDependency('mc2-gesture');
+      canvas.focus();
+      return true;
+    }
+    // Signpost toward the panel's FULLSCREEN button.
+    function signpostFullscreen() {
+      if (!bootProgress.ready) { signpostPending = true; return; }   // climbs once loading is done
+      signpostPending = false;
+      ledLine.classList.remove('run', 'lit', 'loading');
+      sideTab.classList.remove('shimmering');
+      void ledLine.offsetWidth;
+      ledLine.classList.add('run');
+      sideTab.classList.add('shimmering');
+    }
+    ledLine.querySelector('.fill').addEventListener('animationend', () => {
+      ledLine.classList.remove('run');
+      ledLine.classList.add('lit');
+      sideTab.classList.remove('shimmering');
+    });
+    bootStart.addEventListener('click', event => {
+      if (!takeGesture(event)) return;
+      bootStart.textContent = 'Launching…';
+      if (!document.fullscreenElement) setTimeout(signpostFullscreen, 1200);
+    });
+    bootFullscreen.addEventListener('click', event => {
+      event.preventDefault(); event.stopPropagation();
+      resumeAudio();
+      // Embedded: same parent-page route as the side panel's button (hold-ESC).
+      if (embedded) { fullscreenButton.click(); return; }
+      const toggle = document.fullscreenElement ? document.exitFullscreen()
+                                                 : gameShell.requestFullscreen({ navigationUI: 'hide' });
+      toggle.catch(error => append(`[shell] fullscreen request failed: ${error.message || error}`));
+    });
+    document.addEventListener('fullscreenchange', () => {
+      bootFullscreen.textContent = document.fullscreenElement ? 'Windowed' : 'Fullscreen';
+    });
+    if (!needGesture) bootCard.hidden = true;
+    window.__mc2BootObserve = line => {
+      if (line.startsWith('[GameOS] entering main loop')) { bootCard.hidden = true; canvas.focus(); }
+    };
+
+    var Module = {
+      canvas,
+      arguments: shellQuery.get('mission')
+        ? ['-mission', shellQuery.get('mission'), '-nodialog']
+        : [],
+      print: append,
+      printErr: append,
+      preRun: [function() {
+        // A public play build runs until the player exits. Bounded runs remain
+        // available through ?env=MC2_MAX_TICKS:<count> for diagnostics and CI.
+        ENV.MC2_MAX_TICKS = '0';
+        ENV.MC2_TIMING_STATS = '1';
+        ENV.MC2_TICK_PROGRESS = '120';
+        ENV.MC2_WINDOW = '1';
+        if (shellQuery.get('scheduler') === 'timer')
+          ENV.MC2_BROWSER_SCHEDULER = 'timer';
+        // PORT: a browser run has no command line, which is why it was previously
+        // impossible to point the engine's own tracing at a browser-only failure.
+        // Any MC2_* switch can now be set from the query string:
+        //   ?env=MC2_TRACE_FROM_TICK:1,MC2_MAX_TICKS:5
+        for (const pair of (shellQuery.get('env') || '').split(',')) {
+          const [key, value] = pair.split(':');
+          if (key && key.startsWith('MC2_')) ENV[key] = value === undefined ? '1' : value;
+        }
+        // PORT: the two numbers that decide whether a "headless" claim is real.
+        // rAF is fully suspended in a hidden document, so a run that completes
+        // without recording these is not evidence about background execution.
+        requestAnimationFrame(() => { window.__mc2RafFired = true; });
+        append(`[shell] visibilityState=${document.visibilityState} scheduler=${ENV.MC2_BROWSER_SCHEDULER || 'raf'}`);
+        addRunDependency('mc2-opfs');
+        if (needGesture && !gestureTaken) { addRunDependency('mc2-gesture'); gestureDepAdded = true; }
+        const install = () => populateOpfs().then(() => { bootProgress.dataChecked = true; updateBoot(); removeRunDependency('mc2-opfs'); }).catch(error => {
+          // Measured 2026-10-02: Firefox with "Always use private browsing mode"
+          // refuses storage.getDirectory with SecurityError, so nothing installs.
+          status.textContent = (error && error.name === 'SecurityError')
+            ? 'Your browser is blocking game storage. Private browsing mode cannot install the game -- turn it off and reload.'
+            : `Data installation failed: ${(error && error.message) || error}`;
+          append(`[shell] ${error.stack || error}`);
+        });
+        if (embedded && needGesture) {
+          dataAlreadyInstalled().then(state => {
+            if (state.ok || gestureTaken) { install(); return; }
+            deferredInstall = install;
+            const mb = state.bytes ? `about ${Math.round(state.bytes / 1048576)} MB, once` : 'one-time download';
+            status.textContent = `Press LAUNCH to download the game (${mb})`;
+          });
+        } else install();
+      }]
+    };
+  </script>
+  <script src="MechCmd2.js"></script>
+</body>
+</html>
